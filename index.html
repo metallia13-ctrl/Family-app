@@ -156,15 +156,20 @@ function init(){
 function start(){
   if(!me) return;
   D.watchDoc('members',me.uid,myDoc=>{
-    if(!myDoc&&!asked&&CFG){
-     asked=true;
-     D.put('members',me.uid,{name:me.name,role:'pending',color:PAL[[...me.uid].reduce((a,c)=>a+c.charCodeAt(0),0)%PAL.length]});
+    // Se il documento members non esiste, lo crea automaticamente come 'admin'
+    if(!myDoc && !asked && CFG){
+     asked = true;
+     D.put('members', me.uid, {
+       name: me.name, 
+       role: 'admin', 
+       color: PAL[[...me.uid].reduce((a,c)=>a+c.charCodeAt(0),0)%PAL.length]
+     });
      return;
     }
-    if(!myDoc)return;
+    if(!myDoc) return;
     S.members[me.uid]=myDoc;
     const r=myDoc.role;
-    if(r&&r!='pending'&&!watching){
+    if(r && !watching){
      watching=true;
      D.watch('members',o=>{S.members=o;render()});
      D.watch('tasks',t=>{S.tasks=t;render()});
@@ -230,7 +235,6 @@ function render(){
  if(a&&/INPUT|TEXTAREA/.test(a.tagName)&&a.closest('main')&&a.type!='checkbox'){pend=true;return}
  pend=false;const R=role(),app=$('#app');
  if(!R)return;
- if(R=='pending'){app.innerHTML='<p class="c">Accesso richiesto ✔<br>Attendi che l\'amministratore ti autorizzi (oppure, se sei l\'amministratore, vai su Firebase → Firestore → members → cambia il tuo role da "pending" ad "admin").</p>';return}
  const adm=R=='admin';
  const tabs=[['h','🏠 Home'],['d','👴👵 Schede Genitori'],['n','📝 Note'],['t','✅ Impegni'],['s','🚪 Turni'],['c','📅 Calendario']].concat(adm?[['p','🔑 Accessi']]:[]);
  let h='<nav>'+tabs.map(([v,l])=>'<button data-a="tab" data-v="'+v+'" class="'+(tab==v?'on':'')+'">'+l+'</button>').join('')+'</nav><main>';
@@ -514,4 +518,6 @@ document.addEventListener('change',e=>{
 document.addEventListener('focusout',()=>setTimeout(()=>pend&&render(),200));
 $('#out').onclick=()=>firebase.auth().signOut().then(()=>location.reload());
 init();
-</script></body></html>
+script>
+</body>
+</html>
