@@ -106,13 +106,6 @@ const iso=d=>new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
 let me,D,S={members:{},tasks:{},notes:{},events:{},people:{},contacts:{},shifts:{},feed:{}},open=new Set(),psel=null,nfil='all',tab='h',day=iso(new Date()),watching=false;
 function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',3500)}
 
-function localDB(){const k='famiglia_demo',g=()=>{const s=JSON.parse(localStorage[k]||'{}');for(const c of['members','tasks','notes','events','people','contacts','shifts','feed'])s[c]=s[c]||{};return s},cb={};
- const fire=()=>{const s=g();for(const c in cb)cb[c](s[c])};
- return{watchDoc(c,i,f){cb[c+'_'+i]=()=>f(g()[c][i]);f(g()[c][i])},
-  watch(c,f){cb[c]=f;f(g()[c])},
-  put(c,i,d,m){const s=g(),o=s[c][i]||{};s[c][i]=m?{...o,...d,...(d.sel?{sel:{...o.sel,...d.sel}}:{})}:d;localStorage[k]=JSON.stringify(s);fire()},
-  del(c,i){const s=g();delete s[c][i];localStorage[k]=JSON.stringify(s);fire()}}}
-
 function fbDB(){
   if(!firebase.apps.length) firebase.initializeApp(CFG);
   const f=firebase.firestore();
@@ -125,78 +118,50 @@ function fbDB(){
 }
 
 function init(){
-  // MODALITÀ ANTI-BLOCCO: Se Firebase ci mette più di 1.5 secondi o fallisce, passa alla demo locale per non bloccare lo schermo
-  let loaded = false;
-  const timeout = setTimeout(() => {
-    if(!loaded) {
-      console.warn("Firebase non risponde, avvio in modalità locale protetta.");
-      useLocalFallback();
+  if(!firebase.apps.length) firebase.initializeApp(CFG);
+  D=fbDB();
+  
+  firebase.auth().onAuthStateChanged(u=>{
+    if(!u){
+      me = null;
+      watching = false;
+      $('#who').textContent = '';
+      $('#out').hidden = true;
+      $('#app').innerHTML='<p class="c">Accedi per coordinare la gestione di Babbo e Mamma.<br><br><button class="pri" data-a="login">Accedi con Google</button></p>';
+      return;
     }
-  }, 1500);
+    me={uid:u.uid,name:u.displayName||u.email};
+    $('#who').textContent=me.name;
+    $('#out').hidden=false;
 
-  try {
-    if(!firebase.apps.length) firebase.initializeApp(CFG);
-    firebase.auth().onAuthStateChanged(async u=>{
-      loaded = true;
-      clearTimeout(timeout);
-      if(!u){
-        me = null;
-        watching = false;
-        $('#who').textContent = '';
-        $('#out').hidden = true;
-        $('#app').innerHTML='<p class="c">Accedi per coordinare la gestione di Babbo e Mamma.<br><br><button class="pri" data-a="login">Accedi con Google</button><br><br><button class="sm" data-a="demomode">Usa modalità offline/demo</button></p>';
-        return;
+    // Imposta subito un profilo di fallback in locale e sblocca l'interfaccia all'istante
+    S.members[me.uid] = { name: me.name, role: 'admin', color: PAL[0] };
+    render();
+
+    const ref = firebase.firestore().collection('members').doc(me.uid);
+    ref.get().then(doc => {
+      if(!doc.exists){
+        ref.set({ name: me.name, role: 'admin', color: PAL[0] });
       }
-      me={uid:u.uid,name:u.displayName||u.email};
-      $('#who').textContent=me.name;
-      $('#out').hidden=false;
+    }).catch(err => console.log(err));
 
-      D=fbDB();
-      try {
-        const ref = firebase.firestore().collection('members').doc(me.uid);
-        const doc = await ref.get();
-        if(!doc.exists){
-          await ref.set({ name: me.name, role: 'admin', color: PAL[0] });
-        }
-      } catch(err) {
-        console.error("Errore scrittura membro:", err);
-      }
-      start();
-    });
-  } catch(e) {
-    loaded = true;
-    clearTimeout(timeout);
-    useLocalFallback();
-  }
-}
-
-function useLocalFallback(){
-  D = localDB();
-  me = {uid: 'demo_user', name: 'Giulia (Modalità Locale)'};
-  $('#who').textContent = me.name;
-  $('#out.hidden') ? $('#out').hidden = false : null;
-  D.put('members', 'demo_user', {name: me.name, role: 'admin', color: PAL[0]}, 1);
-  start();
+    start();
+  });
 }
 
 function start(){
   if(watching) return;
   watching = true;
 
-  if(D.watchDoc) {
-    D.watchDoc('members', me.uid, myDoc => {
-      if(myDoc) S.members[me.uid] = myDoc;
-      render();
-    });
-  }
-
-  D.watch('members', o => { if(o) S.members = o; render(); });
-  D.watch('tasks', t => { if(t) S.tasks = t; render(); });
-  D.watch('notes', n => { if(n) S.notes = n; render(); });
-  D.watch('people', p => {
-    S.people = p;
+  D.watchDoc('members', me.uid, myDoc => {
+    if(myDoc) S.members[me.uid] = myDoc;
     render();
   });
+
+  D.watch('members', o => { if(o) { S.members = o; render(); } });
+  D.watch('tasks', t => { if(t) S.tasks = t; render(); });
+  D.watch('notes', n => { if(n) S.notes = n; render(); });
+  D.watch('people', p => { S.people = p; render(); });
   ['events','contacts','shifts','feed'].forEach(c => D.watch(c, v => { if(v) S[c] = v; render(); }));
   render();
 }
@@ -241,7 +206,7 @@ const SECTIONS = [
 ];
 const FL = SECTIONS.flatMap(s=>s.fields);
 
-const role=()=>(S.members[me?.uid]||{}).role || 'admin',isEd=()=>['editor','admin'].includes(role());
+const role=()=>me ? ((S.members[me.uid]||{}).role || 'admin') : 'admin', isEd=()=>['editor','admin'].includes(role());
 function render(){
  const a=document.activeElement;
  if(a&&/INPUT|TEXTAREA/.test(a.tagName)&&a.closest('main')&&a.type!='checkbox') return;
@@ -424,7 +389,6 @@ async function shrink(f){const u=await rd(f),im=new Image;im.src=u;await im.deco
 document.addEventListener('click',async e=>{
  const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,i=b.dataset.i,j=+b.dataset.j;
  if(a=='login')return firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(x=>toast(x.code));
- if(a=='demomode'){ useLocalFallback(); return; }
  if(a=='tab'){tab=b.dataset.v;return render()}
  if(a=='gosc'){psel=b.dataset.v;tab='d';return render()}
  if(a=='nfil'){nfil=b.dataset.v;return render()}
