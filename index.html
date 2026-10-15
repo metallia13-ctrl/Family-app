@@ -113,87 +113,113 @@ function localDB(){const k='famiglia_demo',g=()=>{const s=JSON.parse(localStorag
   put(c,i,d,m){const s=g(),o=s[c][i]||{};s[c][i]=m?{...o,...d,...(d.sel?{sel:{...o.sel,...d.sel}}:{})}:d;localStorage[k]=JSON.stringify(s);fire()},
   del(c,i){const s=g();delete s[c][i];localStorage[k]=JSON.stringify(s);fire()}}}
 
-function fbDB(){firebase.initializeApp(CFG);const f=firebase.firestore();
- return{
-  watchDoc:(c,i,cb)=>f.collection(c).doc(i).onSnapshot(d=>cb(d.exists?d.data():null),e=>toast('Errore profilo: '+e.code)),
-  watch:(c,cb)=>(c=='feed'?f.collection(c).orderBy('ts','desc').limit(80):f.collection(c)).onSnapshot(q=>{const o={};q.forEach(d=>o[d.id]=d.data());cb(o)},e=>toast('Errore '+c+': '+e.code)),
-  put:(c,i,d,m)=>(m?f.collection(c).doc(i).set(d,{merge:true}):f.collection(c).doc(i).set(d)).catch(e=>toast('Non consentito: '+e.code)),
-  del:(c,i)=>f.collection(c).doc(i).delete().catch(e=>toast('Non consentito: '+e.code))}}
+function fbDB(){
+  if(!firebase.apps.length) {
+    firebase.initializeApp(CFG);
+  }
+  const f=firebase.firestore();
+  return{
+    watchDoc:(c,i,cb)=>f.collection(c).doc(i).onSnapshot(d=>cb(d.exists?d.data():null),e=>toast('Errore profilo: '+e.code)),
+    watch:(c,cb)=>(c=='feed'?f.collection(c).orderBy('ts','desc').limit(80):f.collection(c)).onSnapshot(q=>{const o={};q.forEach(d=>o[d.id]=d.data());cb(o)},e=>toast('Errore '+c+': '+e.code)),
+    put:(c,i,d,m)=>(m?f.collection(c).doc(i).set(d,{merge:true}):f.collection(c).doc(i).set(d)).catch(e=>toast('Non consentito: '+e.code)),
+    del:(c,i)=>f.collection(c).doc(i).delete().catch(e=>toast('Non consentito: '+e.code))
+  };
+}
 
 function init(){
- if(!CFG){D=localDB();me={uid:'me',name:'Tu (demo)'};D.put('members','me',{name:me.name,role:'admin',color:PAL[0]},1);start();return}
- D=fbDB();
- firebase.auth().onAuthStateChanged(u=>{
-  if(!u){$('#app').innerHTML='<p class="c">Accedi per coordinare la gestione di Babbo e Mamma.<br><br><button class="pri" data-a="login">Accedi con Google</button></p>';return}
-  me={uid:u.uid,name:u.displayName||u.email};$('#out').hidden=false;start()})}
+  if(!CFG){
+    D=localDB();
+    me={uid:'me',name:'Tu (demo)'};
+    D.put('members','me',{name:me.name,role:'admin',color:PAL[0]},1);
+    start();
+    return;
+  }
+  D=fbDB();
+  
+  firebase.auth().onAuthStateChanged(u=>{
+    if(!u){
+      me = null;
+      watching = false;
+      asked = false;
+      $('#who').textContent = '';
+      $('#out').hidden = true;
+      $('#app').innerHTML='<p class="c">Accedi per coordinare la gestione di Babbo e Mamma.<br><br><button class="pri" data-a="login">Accedi con Google</button></p>';
+      return;
+    }
+    me={uid:u.uid,name:u.displayName||u.email};
+    $('#who').textContent=me.name;
+    $('#out').hidden=false;
+    start();
+  });
+}
 
 function start(){
- $('#who').textContent=me.name;
- D.watchDoc('members',me.uid,myDoc=>{
-  if(!myDoc&&!asked&&CFG){
-   asked=true;
-   D.put('members',me.uid,{name:me.name,role:'pending',color:PAL[[...me.uid].reduce((a,c)=>a+c.charCodeAt(0),0)%PAL.length]});
-   return;
-  }
-  if(!myDoc)return;
-  S.members[me.uid]=myDoc;
-  const r=myDoc.role;
-  if(r&&r!='pending'&&!watching){
-   watching=true;
-   D.watch('members',o=>{S.members=o;render()});
-   D.watch('tasks',t=>{S.tasks=t;render()});
-   D.watch('notes',n=>{S.notes=n;render()});
-   D.watch('people',p=>{
-    S.people=p;
-    if(!seeded&&Object.keys(p).length===0&&['editor','admin'].includes((S.members[me.uid]||{}).role)){
-     seeded=true;
-     D.put('people','babbo',{name:'Babbo',therapy:[],vitals:[]});
-     D.put('people','mamma',{name:'Mamma',therapy:[],vitals:[]});
+  if(!me) return;
+  D.watchDoc('members',me.uid,myDoc=>{
+    if(!myDoc&&!asked&&CFG){
+     asked=true;
+     D.put('members',me.uid,{name:me.name,role:'pending',color:PAL[[...me.uid].reduce((a,c)=>a+c.charCodeAt(0),0)%PAL.length]});
+     return;
+    }
+    if(!myDoc)return;
+    S.members[me.uid]=myDoc;
+    const r=myDoc.role;
+    if(r&&r!='pending'&&!watching){
+     watching=true;
+     D.watch('members',o=>{S.members=o;render()});
+     D.watch('tasks',t=>{S.tasks=t;render()});
+     D.watch('notes',n=>{S.notes=n;render()});
+     D.watch('people',p=>{
+      S.people=p;
+      if(!seeded&&Object.keys(p).length===0&&['editor','admin'].includes((S.members[me.uid]||{}).role)){
+       seeded=true;
+       D.put('people','babbo',{name:'Babbo',therapy:[],vitals:[]});
+       D.put('people','mamma',{name:'Mamma',therapy:[],vitals:[]});
+      }
+      render();
+     });
+     ['events','contacts','shifts','feed'].forEach(c=>D.watch(c,v=>{S[c]=v;render()}));
     }
     render();
-   });
-   ['events','contacts','shifts','feed'].forEach(c=>D.watch(c,v=>{S[c]=v;render()}));
-  }
-  render();
- });
+  });
 }
 
 const SECTIONS = [
  { title: '📋 Anagrafica, Documenti e Burocrazia', fields: [
-   ['born','Data di nascita','date',''],
-   ['bplace','Luogo e Provincia di nascita','text','es. Cagliari (CA)'],
-   ['cf','Codice Fiscale','text','16 caratteri'],
-   ['tess_num','N° Tessera Sanitaria (TEAM)','text','8038000...'],
-   ['tess','Scadenza Tessera Sanitaria','date',''],
-   ['cid','N° Carta di Identità e Scadenza','text','es. CA12345AA - scad. 10/2029'],
-   ['exempt','Esenzioni Ticket (codici)','text','es. E01, C01, 031 (ipertensione)...'],
-   ['inval','Invalidità Civile / Legge 104 / Accompagnamento','text','es. 100% con accompagno, verbale del...'],
-   ['where','Dove sono chiavi, documenti, SPID/PIN e referti','area','es. Cartellina blu nello studio, copia chiavi da...','full']
+  ['born','Data di nascita','date',''],
+  ['bplace','Luogo e Provincia di nascita','text','es. Cagliari (CA)'],
+  ['cf','Codice Fiscale','text','16 caratteri'],
+  ['tess_num','N° Tessera Sanitaria (TEAM)','text','8038000...'],
+  ['tess','Scadenza Tessera Sanitaria','date',''],
+  ['cid','N° Carta di Identità e Scadenza','text','es. CA12345AA - scad. 10/2029'],
+  ['exempt','Esenzioni Ticket (codici)','text','es. E01, C01, 031 (ipertensione)...'],
+  ['inval','Invalidità Civile / Legge 104 / Accompagnamento','text','es. 100% con accompagno, verbale del...'],
+  ['where','Dove sono chiavi, documenti, SPID/PIN e referti','area','es. Cartellina blu nello studio, copia chiavi da...','full']
  ]},
  { title: '🩺 Profilo Clinico e Sanitario', fields: [
-   ['blood','Gruppo sanguigno e fattore Rh','text','es. 0 Rh+'],
-   ['base_vit','Valori basali abituali (PA, FC, Peso, SpO2)','text','es. PA abituale 130/75, FC 68 bpm, 72 kg'],
-   ['allergies_med','⚠️ ALLERGIE A FARMACI','area','es. Penicilline (orticaria), FANS... Scrivere Nessuna nota se assenti','full'],
-   ['allergies','Allergie ambientali e Intolleranze alimentari','area','es. Lattosio, nichel, pollini...','full'],
-   ['conditions','Patologie croniche e diagnosi attive','area','es. Ipertensione arteriosa, Diabete tipo 2, FA, Artrosi...','full'],
-   ['surgeries','Interventi chirurgici pregressi e ricoveri','area','es. Cataratta OD (2021), Protesi anca (2019)...','full'],
-   ['vaccines','Vaccinazioni (Antinfluenzale, Covid, Pneumococco, Zoster)','text','es. Antinfluenzale ott 2025, Zoster 2024','full']
+  ['blood','Gruppo sanguigno e fattore Rh','text','es. 0 Rh+'],
+  ['base_vit','Valori basali abituali (PA, FC, Peso, SpO2)','text','es. PA abituale 130/75, FC 68 bpm, 72 kg'],
+  ['allergies_med','⚠️ ALLERGIE A FARMACI','area','es. Penicilline (orticaria), FANS... Scrivere Nessuna nota se assenti','full'],
+  ['allergies','Allergie ambientali e Intolleranze alimentari','area','es. Lattosio, nichel, pollini...','full'],
+  ['conditions','Patologie croniche e diagnosi attive','area','es. Ipertensione arteriosa, Diabete tipo 2, FA, Artrosi...','full'],
+  ['surgeries','Interventi chirurgici pregressi e ricoveri','area','es. Cataratta OD (2021), Protesi anca (2019)...','full'],
+  ['vaccines','Vaccinazioni (Antinfluenzale, Covid, Pneumococco, Zoster)','text','es. Antinfluenzale ott 2025, Zoster 2024','full']
  ]},
  { title: '🏥 Medici, Specialisti e Rete Curante', fields: [
-   ['doctor','Medico di Medicina Generale (MMG) e Telefono','text','es. Dott. Bianchi - 333 1234567'],
-   ['doc_hours','Orari ambulatorio MMG e modalità ricette','area','es. Lun-Mer-Ven 9-12, Mar-Gio 16-19. Ricette via mail/app...','full'],
-   ['spec','Specialisti, Ospedale e Centri di riferimento','area','es. Cardiologia Osp. Civile (Dott. Verdi), Diabetologia...','full'],
-   ['pharmacy','Farmacia di fiducia (nome, tel, orari)','text','es. Farmacia Centrale - 070 123456'],
-   ['caregiver','Assistenza domiciliare (ADI, Infermiere, Badante, Fisio)','text','es. Sig.ra Maria (lun-ven 9-13) - tel...'],
-   ['emerg','Contatti di emergenza (chi chiamare per primo)','text','es. Figlio/a 1: 340... / Figlio/a 2: 347...','full']
+  ['doctor','Medico di Medicina Generale (MMG) e Telefono','text','es. Dott. Bianchi - 333 1234567'],
+  ['doc_hours','Orari ambulatorio MMG e modalità ricette','area','es. Lun-Mer-Ven 9-12, Mar-Gio 16-19. Ricette via mail/app...','full'],
+  ['spec','Specialisti, Ospedale e Centri di riferimento','area','es. Cardiologia Osp. Civile (Dott. Verdi), Diabetologia...','full'],
+  ['pharmacy','Farmacia di fiducia (nome, tel, orari)','text','es. Farmacia Centrale - 070 123456'],
+  ['caregiver','Assistenza domiciliare (ADI, Infermiere, Badante, Fisio)','text','es. Sig.ra Maria (lun-ven 9-13) - tel...'],
+  ['emerg','Contatti di emergenza (chi chiamare per primo)','text','es. Figlio/a 1: 340... / Figlio/a 2: 347...','full']
  ]},
  { title: '🕰️ Orari, Routine, Ausili e Vita Quotidiana', fields: [
-   ['schedule','Orari e routine giornaliera (sveglia, pasti, riposo, sonno)','area','es. Sveglia 07:30, Colazione 08:00, Pranzo 12:30, Riposino 14-15:30, Cena 19:30, Letto 22:00','full'],
-   ['mobility','Mobilità, autonomia e Rischio Cadute','area','es. Cammina in casa con bastone, fuori serve braccio/carrozzina. Attenzione ai tappeti','full'],
-   ['aids','Ausili in uso (occhiali, acustici, dentiera, deambulatore, presidi)','area','es. Occhiali da lettura, Protesi acustica (pile tipo 312), Traversine letto','full'],
-   ['diet','Dieta, idratazione e alimenti da evitare','area','es. Dieta iposodica, bere almeno 1.5L/die, tagliare piccolo (attenzione disfagia)','full'],
-   ['cognitive','Umore, sonno, orientamento e abitudini','area','es. Lucido ma a volte dimentica se ha preso la pastiglia; ama guardare la TV alle 18','full'],
-   ['safety','Sicurezza in casa (gas, stufe, chiavi, vicini di fiducia)','area','es. Chiudere rubinetto gas la sera. Vicina piano terra (Sig.ra Anna) ha le chiavi','full']
+  ['schedule','Orari e routine giornaliera (sveglia, pasti, riposo, sonno)','area','es. Sveglia 07:30, Colazione 08:00, Pranzo 12:30, Riposino 14-15:30, Cena 19:30, Letto 22:00','full'],
+  ['mobility','Mobilità, autonomia e Rischio Cadute','area','es. Cammina in casa con bastone, fuori serve braccio/carrozzina. Attenzione ai tappeti','full'],
+  ['aids','Ausili in uso (occhiali, acustici, dentiera, deambulatore, presidi)','area','es. Occhiali da lettura, Protesi acustica (pile tipo 312), Traversine letto','full'],
+  ['diet','Dieta, idratazione e alimenti da evitare','area','es. Dieta iposodica, bere almeno 1.5L/die, tagliare piccolo (attenzione disfagia)','full'],
+  ['cognitive','Umore, sonno, orientamento e abitudini','area','es. Lucido ma a volte dimentica se ha preso la pastiglia; ama guardare la TV alle 18','full'],
+  ['safety','Sicurezza in casa (gas, stufe, chiavi, vicini di fiducia)','area','es. Chiudere rubinetto gas la sera. Vicina piano terra (Sig.ra Anna) ha le chiavi','full']
  ]}
 ];
 const FL = SECTIONS.flatMap(s=>s.fields);
@@ -222,7 +248,8 @@ function render(){
   if(!ts.length)h+='<p class="c">Nessun impegno in lista. '+(isEd()?'Aggiungine uno qui sopra.':'')+'</p>';
   for(const[i,t]of ts)h+=task(i,t);
  }
- app.innerHTML=h+'</main>'}
+ app.innerHTML=h+'</main>';
+}
 
 function task(i,t){
  const sel=t.sel||{},mine=sel[me.uid]||{},ed=isEd(),ns=Object.entries(S.notes).filter(([,n])=>n.task==i).sort((a,b)=>a[1].ts-b[1].ts);
@@ -260,7 +287,8 @@ function cal(){
  h+='<div class="tl"><div class="ax"><span>7</span><span>10</span><span>13</span><span>16</span><span>19</span><span>22</span></div>'+rows+'</div><div class="lg"><span><i class="sw f"></i> Disponibile</span><span><i class="sw b"></i> Impegnato</span><span><i class="sw t"></i> Impegno assunto</span><span>Insieme = quante persone sono libere</span></div><div class="add"><select id="et" aria-label="Tipo"><option value="free">Disponibile</option><option value="busy">Impegnato</option></select><input type="date" id="ed" value="'+day+'"><input type="time" id="ef" value="09:00"><input type="time" id="eto" value="12:00"><input type="text" id="el" placeholder="Nota (es. lavoro, turno...)"><button class="pri" data-a="addev">Aggiungi per me</button></div>';
  const ev=Object.entries(S.events).filter(([,e])=>e.date==day).sort((a,b)=>a[1].from.localeCompare(b[1].from));
  for(const[i,e]of ev)h+='<div class="mem"><span><b style="color:'+col(e.uid)+'">'+esc((S.members[e.uid]||{}).name||'')+'</b> '+esc(e.from)+'–'+esc(e.to)+' · '+(e.type=='free'?'Disponibile':'Impegnato')+' '+esc(e.label)+'</span>'+(e.uid==me.uid||role()=='admin'?'<button data-a="delev" data-i="'+i+'">🗑</button>':'')+'</div>';
- return h}
+ return h;
+}
 
 const ago=t=>{const m=(Date.now()-t)/6e4;return m<1?'adesso':m<60?Math.round(m)+' min fa':m<1440?Math.round(m/60)+' h fa':Math.round(m/1440)+' g fa'},
  popt=f=>'<option value="">'+f+'</option>'+Object.entries(S.people).map(([i,p])=>'<option value="'+i+'">'+esc(p.name)+'</option>').join(''),
@@ -318,7 +346,8 @@ function shifts(){
   for(const[pi,p]of pe){const ss=Object.entries(S.shifts).filter(([,x])=>x.pid==pi&&x.date==v).sort((a,b)=>a[1].time.localeCompare(b[1].time)),dup=['visita','telefonata'].some(t=>ss.filter(([,x])=>x.type==t).length>1);
    h+='<div class="tr"><b style="width:76px">'+esc(p.name)+'</b><span style="flex:1">'+(ss.length?ss.map(([si,x])=>'<span class="chip" style="color:'+col(x.uid)+'">'+(icons[x.type]||'🚪')+' '+esc((S.members[x.uid]||{}).name||'')+' '+esc(x.time)+(x.uid==me.uid||role()=='admin'?' <button class="ub" style="padding:0 5px" data-a="dels" data-i="'+si+'">×</button>':'')+'</span> ').join(''):'<span class="due" style="color:var(--u2)">scoperta</span>')+(dup?' <span class="due">⚠ doppio</span>':'')+'</span></div>'}
   h+='</div>'}
- return h}
+ return h;
+}
 
 function schede(){
  const ed=isEd(),dis=ed?'':'disabled',pe=Object.entries(S.people);
