@@ -8,4 +8,4 @@ const CFG = {
   appId: "1:696565007260:web:a5c6f84e188e7930d1fe59"
 };
 // Email Google di chi diventa amministratore al primo accesso (le stesse nelle regole Firestore).
-const ADMIN_EMAILS = [ /* "tuamail@gmail.com" */ ];
+const ADMIN_EMAILS = [ /* "metallia13@gmail.com" */ ];
