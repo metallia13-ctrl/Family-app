@@ -9,4 +9,4 @@ const CFG = {
 };
 // Email Google di chi diventa amministratore al primo accesso (le stesse nelle regole Firestore).
 const ADMIN_EMAILS = ["metallia13@gmail.com"];
-  const VAPID_KEY = "la-chiave-copiata";
+  const VAPID_KEY = "BJA3zj9Rp7pZ65d1LVbM7b5wcgIEvKtUghRJsJjJjJLw251m-O6ncGsbIWYIbucCFjGaZS_0Q5ryyuqx--3qrDQ";
