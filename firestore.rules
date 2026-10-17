@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore { match /databases/{db}/documents {
+  function me()  { return get(/databases/$(db)/documents/members/$(request.auth.uid)).data; }
+  function ok()  { return request.auth != null && exists(/databases/$(db)/documents/members/$(request.auth.uid)) && me().role in ['viewer','editor','admin']; }
+  function ed()  { return ok() && me().role in ['editor','admin']; }
+  function adm() { return ok() && me().role == 'admin'; }
+  function own() { return ok() && request.resource.data.uid == request.auth.uid; }
+  function mineOrAdm() { return ok() && (resource.data.uid == request.auth.uid || me().role == 'admin'); }
+
+  match /members/{u} {
+    allow read: if request.auth != null;
+    // nuovo utente: sempre "pending"; admin solo per le email elencate qui sotto
+    allow create: if request.auth.uid == u && (
+        request.resource.data.role == 'pending' ||
+        (request.resource.data.role == 'admin' && request.auth.token.email_verified == true
+          && request.auth.token.email in ['SOSTITUISCI@gmail.com']));
+    allow update: if adm();
+  }
+  match /tasks/{t} {
+    allow read: if ok();
+    allow create, delete: if ed();
+    allow update: if ed() || (ok() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sel']));
+  }
+  match /notes/{n}    { allow read: if ok(); allow write: if ed(); }
+  match /people/{p}   { allow read: if ok(); allow write: if ed(); }
+  match /contacts/{c} { allow read: if ok(); allow write: if ed(); }
+  match /events/{e}   { allow read: if ok(); allow create: if own(); allow update, delete: if mineOrAdm(); }
+  match /shifts/{s}   { allow read: if ok(); allow create: if own(); allow update, delete: if mineOrAdm(); }
+  match /vitals/{v}   { allow read: if ok(); allow create: if own(); allow delete: if mineOrAdm(); }
+  match /feed/{f}     { allow read: if ok(); allow create: if own(); allow delete: if adm(); }
+}}
