@@ -1,0 +1,21 @@
+name: Notifiche Famiglia
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+jobs:
+  notifiche:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TZ: Europe/Rome
+      FIREBASE_SA: ${{ secrets.FIREBASE_SA }}
+      APP_URL: ${{ vars.APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-save --no-audit --no-fund firebase-admin@12
+        working-directory: notify
+      - run: node notify/notify.mjs
